@@ -82,49 +82,34 @@ async function searchRakuten(query) {
     throw error;
   }
 
-  const url =
-    new URL(RAKUTEN_ENDPOINT);
+  const url = new URL(RAKUTEN_ENDPOINT);
 
-  url.searchParams.set(
-    "format",
-    "json"
-  );
-
-  url.searchParams.set(
-    "formatVersion",
-    "2"
-  );
-
+  url.searchParams.set("format", "json");
+  url.searchParams.set("formatVersion", "2");
   url.searchParams.set(
     "applicationId",
     RAKUTEN_APPLICATION_ID
   );
-
   url.searchParams.set(
     "accessKey",
     RAKUTEN_ACCESS_KEY
   );
-
   url.searchParams.set(
     "keyword",
     query
   );
-
   url.searchParams.set(
     "hits",
     "12"
   );
-
   url.searchParams.set(
     "imageFlag",
     "1"
   );
-
   url.searchParams.set(
     "carrier",
     "2"
   );
-
   url.searchParams.set(
     "orFlag",
     "1"
@@ -150,27 +135,20 @@ async function searchRakuten(query) {
     );
   }
 
-  const response =
-    await fetch(
-      url,
-      {
-        method: "GET",
+  const response = await fetch(
+    url,
+    {
+      method: "GET",
 
-        headers: {
-          Accept:
-            "application/json",
-
-          Origin:
-            APP_ORIGIN,
-
-          Referer:
-            `${APP_ORIGIN}/`
-        }
+      headers: {
+        Accept: "application/json",
+        Origin: APP_ORIGIN,
+        Referer: `${APP_ORIGIN}/`
       }
-    );
+    }
+  );
 
-  const text =
-    await response.text();
+  const text = await response.text();
 
   let data;
 
@@ -203,12 +181,17 @@ async function searchRakuten(query) {
     throw error;
   }
 
-  const items =
-    Array.isArray(data.items)
-      ? data.items
-      : [];
+  let rawItems = [];
 
-  return items.map(
+  if (Array.isArray(data.items)) {
+    rawItems = data.items;
+  } else if (Array.isArray(data.Items)) {
+    rawItems = data.Items.map(
+      entry => entry.Item || entry
+    );
+  }
+
+  return rawItems.map(
     normalizeRakutenItem
   );
 }
