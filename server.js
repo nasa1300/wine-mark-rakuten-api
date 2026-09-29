@@ -12,6 +12,9 @@ const RAKUTEN_ACCESS_KEY =
 const RAKUTEN_AFFILIATE_ID =
   process.env.RAKUTEN_AFFILIATE_ID || "";
 
+const APP_ORIGIN =
+  "https://wine-mark-rakuten-api.onrender.com";
+
 const RAKUTEN_ENDPOINT =
   "https://openapi.rakuten.co.jp/ichibams/api/IchibaItem/Search/20260701";
 
@@ -39,14 +42,11 @@ function normalizeRakutenItem(item) {
       item.itemName ||
       randomUUID(),
 
-    name:
-      item.itemName || "",
+    name: item.itemName || "",
 
-    price:
-      item.itemPrice || 0,
+    price: item.itemPrice || 0,
 
-    shopName:
-      item.shopName || "",
+    shopName: item.shopName || "",
 
     imageURL:
       Array.isArray(item.mediumImageUrls) &&
@@ -75,21 +75,13 @@ async function searchRakuten(query) {
     );
 
     error.status = 500;
-
     throw error;
   }
 
   const url = new URL(RAKUTEN_ENDPOINT);
 
-  url.searchParams.set(
-    "format",
-    "json"
-  );
-
-  url.searchParams.set(
-    "formatVersion",
-    "2"
-  );
+  url.searchParams.set("format", "json");
+  url.searchParams.set("formatVersion", "2");
 
   url.searchParams.set(
     "applicationId",
@@ -151,7 +143,11 @@ async function searchRakuten(query) {
     {
       method: "GET",
       headers: {
-        Accept: "application/json"
+        Accept: "application/json",
+
+        // 2026年版楽天API対策
+        // Refererは送らず、Originのみ送信
+        Origin: APP_ORIGIN
       }
     }
   );
@@ -172,13 +168,12 @@ async function searchRakuten(query) {
   }
 
   if (!response.ok) {
-    const error =
-      new Error(
-        data?.errors?.errorMessage ||
-        data.error_description ||
-        data.error ||
-        `Rakuten API returned HTTP ${response.status}`
-      );
+    const error = new Error(
+      data?.errors?.errorMessage ||
+      data.error_description ||
+      data.error ||
+      `Rakuten API returned HTTP ${response.status}`
+    );
 
     error.status =
       response.status;
@@ -194,9 +189,10 @@ async function searchRakuten(query) {
   if (Array.isArray(data.items)) {
     rawItems = data.items;
   } else if (Array.isArray(data.Items)) {
-    rawItems = data.Items.map(
-      entry => entry.Item || entry
-    );
+    rawItems =
+      data.Items.map(
+        entry => entry.Item || entry
+      );
   }
 
   return rawItems.map(
@@ -244,7 +240,8 @@ const server =
 
         if (
           req.method === "GET" &&
-          requestURL.pathname === "/rakuten/search"
+          requestURL.pathname ===
+            "/rakuten/search"
         ) {
           const query =
             (
@@ -265,9 +262,7 @@ const server =
           }
 
           const items =
-            await searchRakuten(
-              query
-            );
+            await searchRakuten(query);
 
           return sendJSON(
             res,
@@ -287,8 +282,7 @@ const server =
           404,
           {
             ok: false,
-            error:
-              "Not found"
+            error: "Not found"
           }
         );
       } catch (error) {
@@ -296,9 +290,7 @@ const server =
 
         return sendJSON(
           res,
-          Number.isInteger(
-            error.status
-          )
+          Number.isInteger(error.status)
             ? error.status
             : 500,
           {
