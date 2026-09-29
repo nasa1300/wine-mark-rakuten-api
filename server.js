@@ -29,55 +29,11 @@ function sendJSON(res, status, data) {
   res.end(body);
 }
 
-function normalizeRakutenItem(item) {
-  const destinationURL =
-    RAKUTEN_AFFILIATE_ID && item.affiliateUrl
-      ? item.affiliateUrl
-      : item.itemUrl;
-
-  return {
-    id:
-      item.itemCode ||
-      destinationURL ||
-      item.itemName ||
-      randomUUID(),
-
-    name: item.itemName || "",
-
-    price: item.itemPrice || 0,
-
-    shopName: item.shopName || "",
-
-    imageURL:
-      Array.isArray(item.mediumImageUrls) &&
-      item.mediumImageUrls.length > 0
-        ? item.mediumImageUrls[0]
-        : null,
-
-    destinationURL:
-      destinationURL || null,
-
-    usesAffiliateURL:
-      Boolean(
-        RAKUTEN_AFFILIATE_ID &&
-        item.affiliateUrl
-      )
-  };
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function searchRakuten(query) {
-  if (
-    !RAKUTEN_APPLICATION_ID ||
-    !RAKUTEN_ACCESS_KEY
-  ) {
-    const error = new Error(
-      "Rakuten API credentials are not configured on the server."
-    );
-
-    error.status = 500;
-    throw error;
-  }
-
+function buildRakutenURL(query) {
   const url = new URL(RAKUTEN_ENDPOINT);
 
   url.searchParams.set("format", "json");
@@ -138,21 +94,70 @@ async function searchRakuten(query) {
     );
   }
 
-  const response = await fetch(
-    url,
-    {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
+  return url;
+}
 
-        // 2026年版楽天API対策
-        // Refererは送らず、Originのみ送信
-        Origin: APP_ORIGIN
+function normalizeRakutenItem(item) {
+  const destinationURL =
+    RAKUTEN_AFFILIATE_ID && item.affiliateUrl
+      ? item.affiliateUrl
+      : item.itemUrl;
+
+  return {
+    id:
+      item.itemCode ||
+      destinationURL ||
+      item.itemName ||
+      randomUUID(),
+
+    name:
+      item.itemName || "",
+
+    price:
+      item.itemPrice || 0,
+
+    shopName:
+      item.shopName || "",
+
+    imageURL:
+      Array.isArray(item.mediumImageUrls) &&
+      item.mediumImageUrls.length > 0
+        ? item.mediumImageUrls[0]
+        : null,
+
+    destinationURL:
+      destinationURL || null,
+
+    usesAffiliateURL:
+      Boolean(
+        RAKUTEN_AFFILIATE_ID &&
+        item.affiliateUrl
+      )
+  };
+}
+
+async function requestRakuten(
+  query,
+  extraHeaders = {}
+) {
+  const url =
+    buildRakutenURL(query);
+
+  const response =
+    await fetch(
+      url,
+      {
+        method: "GET",
+
+        headers: {
+          Accept: "application/json",
+          ...extraHeaders
+        }
       }
-    }
-  );
+    );
 
-  const text = await response.text();
+  const text =
+    await response.text();
 
   let data;
 
@@ -167,13 +172,49 @@ async function searchRakuten(query) {
     };
   }
 
+  return {
+    response,
+    data
+  };
+}
+
+async function searchRakuten(query) {
+  if (
+    !RAKUTEN_APPLICATION_ID ||
+    !RAKUTEN_ACCESS_KEY
+  ) {
+    const error =
+      new Error(
+        "Rakuten API credentials are not configured on the server."
+      );
+
+    error.status = 500;
+
+    throw error;
+  }
+
+  /*
+    通常検索では Origin のみ送信。
+    診断結果を見たあと、最終形を確定します。
+  */
+  const {
+    response,
+    data
+  } = await requestRakuten(
+    query,
+    {
+      Origin: APP_ORIGIN
+    }
+  );
+
   if (!response.ok) {
-    const error = new Error(
-      data?.errors?.errorMessage ||
-      data.error_description ||
-      data.error ||
-      `Rakuten API returned HTTP ${response.status}`
-    );
+    const error =
+      new Error(
+        data?.errors?.errorMessage ||
+        data.error_description ||
+        data.error ||
+        `Rakuten API returned HTTP ${response.status}`
+      );
 
     error.status =
       response.status;
@@ -187,17 +228,108 @@ async function searchRakuten(query) {
   let rawItems = [];
 
   if (Array.isArray(data.items)) {
-    rawItems = data.items;
+    rawItems =
+      data.items;
   } else if (Array.isArray(data.Items)) {
     rawItems =
       data.Items.map(
-        entry => entry.Item || entry
+        entry =>
+          entry.Item || entry
       );
   }
 
   return rawItems.map(
     normalizeRakutenItem
   );
+}
+
+async function runDiagnosticAttempt(
+  name,
+  headers
+) {
+  try {
+    const {
+      response,
+      data
+    } = await requestRakuten(
+      "ワイン",
+      headers
+    );
+
+    return {
+      name,
+      status:
+        response.status,
+      ok:
+        response.ok,
+      rakutenError:
+        data?.errors?.errorMessage ||
+        data.error_description ||
+        data.error ||
+        null
+    };
+  } catch (error) {
+    return {
+      name,
+      status: null,
+      ok: false,
+      rakutenError:
+        error.message ||
+        "Unknown error"
+    };
+  }
+}
+
+async function runRakutenDiagnostic() {
+  const results = [];
+
+  results.push(
+    await runDiagnosticAttempt(
+      "no_headers",
+      {}
+    )
+  );
+
+  await sleep(1500);
+
+  results.push(
+    await runDiagnosticAttempt(
+      "origin_only",
+      {
+        Origin:
+          APP_ORIGIN
+      }
+    )
+  );
+
+  await sleep(1500);
+
+  results.push(
+    await runDiagnosticAttempt(
+      "referer_only",
+      {
+        Referer:
+          `${APP_ORIGIN}/`
+      }
+    )
+  );
+
+  await sleep(1500);
+
+  results.push(
+    await runDiagnosticAttempt(
+      "origin_and_referer",
+      {
+        Origin:
+          APP_ORIGIN,
+
+        Referer:
+          `${APP_ORIGIN}/`
+      }
+    )
+  );
+
+  return results;
 }
 
 const server =
@@ -227,7 +359,8 @@ const server =
 
         if (
           req.method === "GET" &&
-          requestURL.pathname === "/health"
+          requestURL.pathname ===
+            "/health"
         ) {
           return sendJSON(
             res,
@@ -241,12 +374,61 @@ const server =
         if (
           req.method === "GET" &&
           requestURL.pathname ===
+            "/diagnostic"
+        ) {
+          const diagnostic =
+            await runRakutenDiagnostic();
+
+          return sendJSON(
+            res,
+            200,
+            {
+              ok: true,
+
+              environment: {
+                applicationIdPrefix:
+                  RAKUTEN_APPLICATION_ID
+                    ? `${RAKUTEN_APPLICATION_ID.slice(
+                        0,
+                        6
+                      )}...`
+                    : null,
+
+                applicationIdConfigured:
+                  Boolean(
+                    RAKUTEN_APPLICATION_ID
+                  ),
+
+                accessKeyConfigured:
+                  Boolean(
+                    RAKUTEN_ACCESS_KEY
+                  ),
+
+                affiliateIdConfigured:
+                  Boolean(
+                    RAKUTEN_AFFILIATE_ID
+                  ),
+
+                origin:
+                  APP_ORIGIN
+              },
+
+              tests:
+                diagnostic
+            }
+          );
+        }
+
+        if (
+          req.method === "GET" &&
+          requestURL.pathname ===
             "/rakuten/search"
         ) {
           const query =
             (
-              requestURL.searchParams.get("q") ||
-              ""
+              requestURL.searchParams.get(
+                "q"
+              ) || ""
             ).trim();
 
           if (!query) {
@@ -262,7 +444,9 @@ const server =
           }
 
           const items =
-            await searchRakuten(query);
+            await searchRakuten(
+              query
+            );
 
           return sendJSON(
             res,
@@ -282,7 +466,8 @@ const server =
           404,
           {
             ok: false,
-            error: "Not found"
+            error:
+              "Not found"
           }
         );
       } catch (error) {
@@ -290,7 +475,9 @@ const server =
 
         return sendJSON(
           res,
-          Number.isInteger(error.status)
+          Number.isInteger(
+            error.status
+          )
             ? error.status
             : 500,
           {
