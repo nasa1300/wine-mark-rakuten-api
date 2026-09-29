@@ -12,9 +12,6 @@ const RAKUTEN_ACCESS_KEY =
 const RAKUTEN_AFFILIATE_ID =
   process.env.RAKUTEN_AFFILIATE_ID || "";
 
-const APP_ORIGIN =
-  "https://wine-mark-rakuten-api.onrender.com";
-
 const RAKUTEN_ENDPOINT =
   "https://openapi.rakuten.co.jp/ichibams/api/IchibaItem/Search/20260701";
 
@@ -84,32 +81,46 @@ async function searchRakuten(query) {
 
   const url = new URL(RAKUTEN_ENDPOINT);
 
-  url.searchParams.set("format", "json");
-  url.searchParams.set("formatVersion", "2");
+  url.searchParams.set(
+    "format",
+    "json"
+  );
+
+  url.searchParams.set(
+    "formatVersion",
+    "2"
+  );
+
   url.searchParams.set(
     "applicationId",
     RAKUTEN_APPLICATION_ID
   );
+
   url.searchParams.set(
     "accessKey",
     RAKUTEN_ACCESS_KEY
   );
+
   url.searchParams.set(
     "keyword",
     query
   );
+
   url.searchParams.set(
     "hits",
     "12"
   );
+
   url.searchParams.set(
     "imageFlag",
     "1"
   );
+
   url.searchParams.set(
     "carrier",
     "2"
   );
+
   url.searchParams.set(
     "orFlag",
     "1"
@@ -139,11 +150,8 @@ async function searchRakuten(query) {
     url,
     {
       method: "GET",
-
       headers: {
-        Accept: "application/json",
-        Origin: APP_ORIGIN,
-        Referer: `${APP_ORIGIN}/`
+        Accept: "application/json"
       }
     }
   );
